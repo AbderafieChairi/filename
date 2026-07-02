@@ -1,1 +1,90 @@
 test1%22%3E%20%3Cimg%20src%3Dx%20onerror%3D%7Balert%28%271%27%29%7D%20/%3E
+
+
+Yes, absolutely. If the application serves user-uploaded or user-modified SVG files and renders them via an `<img>` tag, you can achieve XSS through **SVG-based attacks**, but there's an important nuance with the `<img>` tag specifically.
+
+---
+
+## The `<img>` tag limitation
+
+When an SVG is loaded via `<img src="...">`, **scripts inside the SVG do NOT execute**. Browsers block JavaScript execution in SVGs loaded through `<img>` tags for security reasons.
+
+So a direct `<script>alert(1)</script>` inside `img1.svg` would **not** fire.
+
+---
+
+## However, there ARE ways to get XSS
+
+### 1. **If the SVG is ever rendered via `<object>`, `<embed>`, `<iframe>`, or opened directly in a new tab**
+
+If the app also offers a "view full image" feature that opens the SVG directly, then any script in the SVG would execute.
+
+### 2. **Event handlers in SVG + certain contexts** (won't work in `<img>` either)
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="red" onload="alert(1)"/>
+</svg>
+```
+
+This also won't fire inside `<img>` — event handlers are blocked too.
+
+### 3. **But there IS a way that works — SVG via other render paths**
+
+If the `preview` value can be controlled (e.g., `preview` is built from user input), you could try:
+
+- **Data URL injection** (if `preview` comes from user input):
+
+```
+data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>
+```
+
+But via `<img>`, this also won't execute scripts.
+
+---
+
+## The real attack: **Stored XSS via SVG uploaded to the server**
+
+If the app **uploads and stores SVGs** that are later rendered to other users (admins, moderators), the attack is:
+
+1. Upload a malicious SVG containing an **XSS payload**
+2. Convince a victim (e.g., admin) to **open the SVG directly** in their browser (e.g., via a link to `/static/img1.svg`)
+3. The script executes in the **SVG's origin context**
+
+Working payload for `img1.svg`:
+
+```svg
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+  <script>
+    alert(1)
+  </script>
+  <rect width="100%" height="100%" fill="blue"/>
+</svg>
+```
+
+---
+
+## So what CAN you do within the `<img>` tag for SSRF?
+
+The `<img>` tag **does make a request** to the server. If you can control the `preview` value (e.g., it comes from user input or database), you could test:
+
+```
+<img src="http://169.254.169.254/latest/meta-data/" ...>
+```
+
+But you said `preview` is `/static/img1.svg`, so unless you can control that path...
+
+---
+
+## Bottom line
+
+| Context | XSS via SVG possible? |
+|---|---|
+| `<img src="/static/img1.svg">` | **No** — scripts blocked in `<img>` |
+| Direct URL `/static/img1.svg` opened in browser | **Yes** — SVG script executes |
+| `<object data="/static/img1.svg">` | **Yes** |
+| `<embed src="/static/img1.svg">` | **Yes** |
+| `<iframe src="/static/img1.svg">` | **Yes** |
+
+If you can get the admin to open `https://target.com/static/img1.svg` directly, the SVG payload above will work. Otherwise, with just `<img>`, you're limited to non-script impacts like SVG-based CSRF (making requests) or SVG-based data exfiltration via CSS/Font attacks — but no `alert(1)`.
