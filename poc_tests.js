@@ -22,6 +22,8 @@
     // Check if __reactRouterContext exists
     if (typeof window.__reactRouterContext === 'undefined') {
       findings.push({severity: 'INFO', msg: '__reactRouterContext not found - app may not use RR7 Framework Mode'});
+      findings.push({severity: 'INFO', msg: 'App is running in client-side rendering mode (not SSR)'});
+      findings.push({severity: 'ACTION', msg: 'Exploitation requires HTTP requests to server, not browser console'});
       return findings;
     }
     findings.push({severity: 'PASS', msg: '__reactRouterContext exists'});
