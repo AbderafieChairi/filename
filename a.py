@@ -1,7 +1,7 @@
 import base64
 
-input_file = "wl1"
-output_file = "wl2"
+input_file = "wl3"
+output_file = "wl4"
 
 with open(input_file, "r", encoding="utf-8") as infile, \
      open(output_file, "w", encoding="utf-8") as outfile:
